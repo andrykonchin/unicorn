@@ -3,14 +3,18 @@ require "raindrops"
 
 # This class and its members can be considered a stable interface
 # and will not change in a backwards-incompatible fashion between
-# releases of unicorn.  Knowledge of this class is generally not
+# releases of unicorn.  Knowledge of this class is generally
 # not needed for most users of unicorn.
 #
 # Some users may want to access it in the before_fork/after_fork hooks.
 # See the Unicorn::Configurator RDoc for examples.
+
+# It's a fake, it isn't a worker representation,
+# it's just a pait of pipes, notjing more
 class Unicorn::Worker
   # :stopdoc:
   attr_accessor :nr, :switched
+  # NOTE IO.select runs #to_io on arguments (http://ruby-doc.org/core-2.0.0/IO.html#method-i-to_io)
   attr_reader :to_io # IO.select-compatible
 
   PER_DROP = Raindrops::PAGE_SIZE / Raindrops::SIZE

@@ -459,7 +459,7 @@ class Unicorn::HttpServer
     proc_name 'master (old)'
   end
 
-  # forcibly terminate all workers that haven't checked in in timeout seconds.  The timeout is implemented using an unlinked File
+  # forcibly terminate all workers that haven't checked in timeout seconds.  The timeout is implemented using an unlinked File
   def murder_lazy_workers
     next_sleep = @timeout - 1
     now = time_now.to_i

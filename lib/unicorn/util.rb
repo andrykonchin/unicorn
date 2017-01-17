@@ -65,7 +65,7 @@ module Unicorn::Util # :nodoc:
         else
           # We should not need this workaround, Ruby can be fixed:
           #    http://bugs.ruby-lang.org/issues/9036
-          # MRI will not call call fclose(3) or freopen(3) here
+          # MRI will not call fclose(3) or freopen(3) here
           # since there's no associated std{in,out,err} FILE * pointer
           # This should atomically use dup3(2) (or dup2(2)) syscall
           File.open(fp.path, "a") { |tmpfp| fp.reopen(tmpfp) }
