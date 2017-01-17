@@ -27,7 +27,7 @@ class Unicorn::Worker
     @raindrop[@offset] = 0
     @nr = nr
     @switched = false
-    @to_io, @master = Unicorn.pipe
+    @to_io, @master = Unicorn.pipe # from_master, to_worker
   end
 
   def atfork_child # :nodoc:

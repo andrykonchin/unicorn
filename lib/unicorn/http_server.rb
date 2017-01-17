@@ -23,9 +23,12 @@ class Unicorn::HttpServer
   # all bound listener sockets
   # note: this is public used by raindrops, but not recommended for use
   # in new projects
+  # inherited via UNICORN_FD env variable + config sockets
   LISTENERS = []
 
   # listeners we have yet to bind
+  # taken from config
+  # we clear it at the end of start
   NEW_LISTENERS = []
 
   # :startdoc:
@@ -256,7 +259,7 @@ class Unicorn::HttpServer
   # is signalling us too often.
   def join
     respawn = true
-    last_check = time_now
+    last_check = time_now  # NOTE Time.now or Float. Last checking of timeouted workers
 
     proc_name 'master'
     logger.info "master process ready" # test_exec.rb relies on this message
@@ -269,15 +272,16 @@ class Unicorn::HttpServer
       @ready_pipe = @ready_pipe.close rescue nil
     end
     begin
-      reap_all_workers
+      reap_all_workers # prevent child processes become zombie
+      # NOTE when there are several signals in the queue - we handle them in endless while loop
       case @sig_queue.shift
       when nil
         # avoid murdering workers after our master process (or the
         # machine) comes out of suspend/hibernation
         if (last_check + @timeout) >= (last_check = time_now)
-          sleep_time = murder_lazy_workers
+          sleep_time = murder_lazy_workers # NOTE 1 sec or greater
         else
-          sleep_time = @timeout/2.0 + 1
+          sleep_time = @timeout/2.0 + 1 # NOTE 30 -> 16 -> 9 -> 5 -> 3 -> 2 -> (2)
           @logger.debug("waiting #{sleep_time}s after suspend/hibernation")
         end
         maintain_worker_count if respawn
@@ -388,7 +392,7 @@ class Unicorn::HttpServer
     begin
       wpid, status = Process.waitpid2(-1, Process::WNOHANG)
       wpid or return
-      if @reexec_pid == wpid
+      if @reexec_pid == wpid # new master process is dead, we are master again
         logger.error "reaped #{status.inspect} exec()-ed"
         @reexec_pid = 0
         self.pid = pid.chomp('.oldbin') if pid
@@ -407,7 +411,8 @@ class Unicorn::HttpServer
   def reexec
     if @reexec_pid > 0
       begin
-        Process.kill(0, @reexec_pid)
+        # NOTE "0" signal does nothing - it's just checking if process exists
+        Process.kill(0, @reexec_pid) # NOTE use signal NAME of "0" signal
         logger.error "reexec-ed child already running PID:#@reexec_pid"
         return
       rescue Errno::ESRCH
@@ -476,6 +481,7 @@ class Unicorn::HttpServer
       logger.error "worker=#{worker.nr} PID:#{wpid} timeout " \
                    "(#{diff}s > #{@timeout}s), killing"
       kill_worker(:KILL, wpid) # take no prisoners for timeout violations
+      # NOTE we kill worker but don't remove it from @workers
     end
     next_sleep <= 0 ? 1 : next_sleep
   end
@@ -496,8 +502,8 @@ class Unicorn::HttpServer
 
   def spawn_missing_workers
     worker_nr = -1
-    until (worker_nr += 1) == @worker_processes
-      @workers.value?(worker_nr) and next
+    until (worker_nr += 1) == @worker_processes # NOTE (0 .. @worker_processes).each do |worker_nr|
+      @workers.value?(worker_nr) and next # NOTE we store Workes in this hash and override Worker#==(Numeric)
       worker = Unicorn::Worker.new(worker_nr)
       before_fork.call(self, worker)
       if pid = fork
@@ -553,6 +559,10 @@ class Unicorn::HttpServer
     client.write(@request.response_start_sent ?
                  "100 Continue\r\n\r\nHTTP/1.1 ".freeze :
                  "HTTP/1.1 100 Continue\r\n\r\n".freeze)
+    # NOTE According to HTTP standatd client must set EXPECT: 100-continue header
+    # if it expects to receive 100 Continue response.
+    # Otherwise server must not send such response.
+    # So Unicorn calls application again without this header and gets final response
     env.delete('HTTP_EXPECT'.freeze)
   end
 
@@ -617,7 +627,7 @@ class Unicorn::HttpServer
     build_app! unless preload_app
     @after_fork = @listener_opts = @orig_app = nil
     readers = LISTENERS.dup
-    readers << worker
+    readers << worker # NOTE see Worker#to_i => pipe
     trap(:QUIT) { nuke_listeners!(readers) }
     readers
   end
@@ -637,6 +647,7 @@ class Unicorn::HttpServer
   def worker_loop(worker)
     ppid = @master_pid
     readers = init_worker_process(worker)
+    # NOTE we've received USR1 signal
     nr = 0 # this becomes negative if we need to reopen logs
 
     # this only works immediately if the master sent us the signal
@@ -654,12 +665,13 @@ class Unicorn::HttpServer
       while sock = tmp.shift
         # Unicorn::Worker#kgio_tryaccept is not like accept(2) at all,
         # but that will return false
+        # NOTE sock can be Worker instance, and we received command from master via pipe
         if client = sock.kgio_tryaccept
           process_client(client)
           nr += 1
           worker.tick = time_now.to_i
         end
-        break if nr < 0
+        break if nr < 0 # NOTE nr becomes negative after USR1 signal
       end
 
       # make the following bet: if we accepted clients this round,
@@ -675,11 +687,12 @@ class Unicorn::HttpServer
 
       # timeout used so we can detect parent death:
       worker.tick = time_now.to_i
+      # NOTE readers contains the worker but worker implement #to_i and returns pipe
       ret = IO.select(readers, nil, nil, @timeout) and ready = ret[0]
     rescue => e
       redo if nr < 0 && readers[0]
       Unicorn.log_error(@logger, "listen loop error", e) if readers[0]
-    end while readers[0]
+    end while readers[0] # NOTE readers equals [false] after QUIT signal
   end
 
   # delivers a signal to a worker and fails gracefully if the worker
@@ -690,11 +703,13 @@ class Unicorn::HttpServer
     worker = @workers.delete(wpid) and worker.close rescue nil
   end
 
+  # NOTE send system signal
   # delivers a signal to each worker
   def kill_each_worker(signal)
     @workers.keys.each { |wpid| kill_worker(signal, wpid) }
   end
 
+  # NOTE notify via pipe
   def soft_kill_each_worker(signal)
     @workers.each_value { |worker| worker.soft_kill(signal) }
   end

@@ -39,6 +39,14 @@ class Unicorn::StreamInput
   # ios.read(length [, buffer]) will return immediately if there is
   # any data and only block when nothing is available (providing
   # IO#readpartial semantics).
+  #
+  # NOTE Rack specification:
+  # read behaves like IO#read. Its signature is read([length, [buffer]]).
+  # If given, length must be a non-negative Integer (>= 0) or nil, and buffer must be a String and may not be nil.
+  # If length is given and not nil, then this method reads at most length bytes from the input stream.
+  # If length is not given or nil, then this method reads all data until EOF.
+  # When EOF is reached, this method returns nil if length is given and not nil, or “” if length is not given or is nil.
+  # If buffer is given, then the read data will be placed into buffer instead of a newly created String object.
   def read(length = nil, rv = '')
     if length
       if length <= @rbuf.size
@@ -71,6 +79,9 @@ class Unicorn::StreamInput
   # Returns nil if called at the end of file.
   # This takes zero arguments for strict Rack::Lint compatibility,
   # unlike IO#gets.
+  #
+  # NOTE Rack specification
+  # gets must be called without arguments and return a string, or nil on EOF.
   def gets
     sep = $/
     if sep.nil?
@@ -93,6 +104,9 @@ class Unicorn::StreamInput
   #
   # Executes the block for every ``line'' in *ios*, where lines are
   # separated by the global record separator ($/, typically "\n").
+  #
+  # NOTE Rack specification
+  # each must be called without arguments and only yield Strings.
   def each
     while line = gets
       yield line

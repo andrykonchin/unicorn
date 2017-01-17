@@ -11,6 +11,10 @@
 #
 # When processing uploads, Unicorn exposes a TeeInput object under
 # "rack.input" of the Rack environment.
+#
+# NOTE The stream must respond to gets, each, read and rewind.
+# http://www.rubydoc.info/github/rack/rack/master/file/SPEC
+
 class Unicorn::TeeInput < Unicorn::StreamInput
   # The maximum size (in +bytes+) to buffer in memory before
   # resorting to a temporary file.  Default is 112 kilobytes.
@@ -87,6 +91,7 @@ class Unicorn::TeeInput < Unicorn::StreamInput
   # ios.read(length [, buffer]) will return immediately if there is
   # any data and only block when nothing is available (providing
   # IO#readpartial semantics).
+
   def read(*args)
     @socket ? tee(super) : @tmp.read(*args)
   end
@@ -110,6 +115,12 @@ class Unicorn::TeeInput < Unicorn::StreamInput
   # Positions the *ios* pointer to the beginning of input, returns
   # the offset (zero) of the +ios+ pointer.  Subsequent reads will
   # start from the beginning of the previously-buffered input.
+  #
+  # NOTE Rack specification
+  # rewind must be called without arguments. It rewinds the input stream back to the beginning.
+  # It must not raise Errno::ESPIPE: that is, it may not be a pipe or a socket.
+  # Therefore, handler developers must buffer the input data into some rewindable object
+  # if the underlying input stream is not rewindable.
   def rewind
     return 0 if 0 == @tmp.size
     consume! if @socket

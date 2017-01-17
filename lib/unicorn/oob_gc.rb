@@ -7,6 +7,8 @@
 # Users on Ruby 2.0 (not 2.1+) may also want to check out
 # lib/middleware/unicorn_oobgc.rb from the Discourse project
 # (https://github.com/discourse/discourse)
+# # Removed form discource
+# # https://github.com/discourse/discourse/commit/ea9f7a41af7aea1e5d4f94f435e55d18b112b97d
 #
 # The following information is only for historical versions of Ruby.
 #
