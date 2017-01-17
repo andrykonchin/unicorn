@@ -23,7 +23,7 @@ class PrereadInput
     buf = ""
     input = env["rack.input"]
     if input.respond_to?(:rewind)
-      true while input.read(16384, buf)
+      true while input.read(16384, buf) # CHUNK_SIZE ?
       input.rewind
     end
     @app.call(env)
