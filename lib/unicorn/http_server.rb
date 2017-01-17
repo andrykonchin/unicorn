@@ -263,10 +263,10 @@ class Unicorn::HttpServer
 
     proc_name 'master'
     logger.info "master process ready" # test_exec.rb relies on this message
-    if @ready_pipe
+    if @ready_pipe # NOTE what is it?
       begin
         @ready_pipe.syswrite($$.to_s)
-      rescue => e
+      rescue => e # NOTE to catch only IO errors?
         logger.warn("grandparent died too soon?: #{e.message} (#{e.class})")
       end
       @ready_pipe = @ready_pipe.close rescue nil
@@ -278,6 +278,10 @@ class Unicorn::HttpServer
       when nil
         # avoid murdering workers after our master process (or the
         # machine) comes out of suspend/hibernation
+
+        # NOTE I don't understand this logic !!!!
+        # NOTE it's false only when awaiting signals handling
+        # (e.g. reexec or spawning new worker) takes more than @timeout
         if (last_check + @timeout) >= (last_check = time_now)
           sleep_time = murder_lazy_workers # NOTE 1 sec or greater
         else
@@ -316,6 +320,7 @@ class Unicorn::HttpServer
         respawn = true
         if config.config_file
           load_config!
+        # NOTE what doees it mean "there is no config file"?
         else # exec binary and exit if there's no config file
           logger.info "config_file not present, reexecuting binary"
           reexec
@@ -390,7 +395,7 @@ class Unicorn::HttpServer
   # reaps all unreaped workers
   def reap_all_workers
     begin
-      wpid, status = Process.waitpid2(-1, Process::WNOHANG)
+      wpid, status = Process.waitpid2(-1, Process::WNOHANG) # NOTE what does it return if there are several dead processes?
       wpid or return
       if @reexec_pid == wpid # new master process is dead, we are master again
         logger.error "reaped #{status.inspect} exec()-ed"
@@ -515,7 +520,7 @@ class Unicorn::HttpServer
         exit
       end
     end
-    rescue => e
+    rescue => e # NOTE why error handling only here? why Exception instead StandardError?
       @logger.error(e) rescue nil
       exit!
   end
@@ -549,6 +554,7 @@ class Unicorn::HttpServer
     end
     client.close
     rescue
+      # NOTE any logging here?
   end
 
   def e100_response_write(client, env)
@@ -572,7 +578,7 @@ class Unicorn::HttpServer
     status, headers, body = @app.call(env = @request.read(client))
 
     begin
-      return if @request.hijacked?
+      return if @request.hijacked? # NOTE WTF?
 
       if 100 == status.to_i
         e100_response_write(client, env)
@@ -610,8 +616,8 @@ class Unicorn::HttpServer
     # we'll re-trap :QUIT later for graceful shutdown iff we accept clients
     exit_sigs = [ :QUIT, :TERM, :INT ]
     exit_sigs.each { |sig| trap(sig) { exit!(0) } }
-    exit!(0) if (@sig_queue & exit_sigs)[0]
-    (@queue_sigs - exit_sigs).each { |sig| trap(sig, nil) }
+    exit!(0) if (@sig_queue & exit_sigs)[0] # NOTE there is a quit command to master se we quit too
+    (@queue_sigs - exit_sigs).each { |sig| trap(sig, nil) } # NOTE Why nil? not documented for Signal.trap
     trap(:CHLD, 'DEFAULT')
     @sig_queue.clear
     proc_name "worker[#{worker.nr}]"
@@ -619,7 +625,7 @@ class Unicorn::HttpServer
     @workers.clear
 
     after_fork.call(self, worker) # can drop perms and create listeners
-    LISTENERS.each { |sock| sock.close_on_exec = true }
+    LISTENERS.each { |sock| sock.close_on_exec = true } # NOTE why? we aren't going to call exec (2)
 
     worker.user(*user) if user.kind_of?(Array) && ! worker.switched
     self.timeout /= 2.0 # halve it for select()
@@ -683,7 +689,7 @@ class Unicorn::HttpServer
         redo
       end
 
-      ppid == Process.ppid or return
+      ppid == Process.ppid or return # NOTE WTF?
 
       # timeout used so we can detect parent death:
       worker.tick = time_now.to_i
@@ -821,7 +827,7 @@ class Unicorn::HttpServer
   # This binds any listeners we did NOT inherit from the parent
   def bind_new_listeners!
     NEW_LISTENERS.each { |addr| listen(addr) }.clear
-    raise ArgumentError, "no listeners" if LISTENERS.empty?
+    raise ArgumentError, "no listeners" if LISTENERS.empty? # WTF? `listen` adds sockets to LISTENS collection, it's bad place to check if it empty
   end
 
   # try to use the monotonic clock in Ruby >= 2.1, it is immune to clock
